@@ -67,7 +67,7 @@ a = Analysis(
     hookspath=[os.path.join(SPECPATH, "hooks")],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=["tkinter", "PIL"],
+    excludes=["tkinter", "PIL", "PyQt5", "PyQt6", "PySide2"],
     noarchive=False,
     optimize=0,
 )
@@ -81,7 +81,7 @@ updater_analysis = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=["tkinter", "PIL"],
+    excludes=["tkinter", "PIL", "PyQt5", "PyQt6", "PySide2"],
     noarchive=False,
     optimize=0,
 )
