@@ -2,8 +2,8 @@ import math
 import time
 
 from PySide6.QtCore import QEvent, QObject, QPointF, QRect, QSettings, QTimer, Signal, Qt
-from PySide6.QtGui import QBrush, QColor, QIcon, QLinearGradient, QMouseEvent, QPainter, QPalette, QPen, QPixmap, QPolygonF, QRadialGradient
-from PySide6.QtWidgets import QDialogButtonBox, QGraphicsDropShadowEffect, QHeaderView, QHBoxLayout, QLabel, QStyle, QStyledItemDelegate, QStyleOptionViewItem, QVBoxLayout, QWidget
+from PySide6.QtGui import QBrush, QColor, QFontMetrics, QIcon, QLinearGradient, QMouseEvent, QPainter, QPalette, QPen, QPixmap, QPolygonF, QRadialGradient
+from PySide6.QtWidgets import QDialogButtonBox, QGraphicsDropShadowEffect, QHeaderView, QHBoxLayout, QLabel, QSizePolicy, QStyle, QStyledItemDelegate, QStyleOptionViewItem, QVBoxLayout, QWidget
 from qfluentwidgets import BodyLabel, CardWidget, EditableComboBox, IconWidget, LineEdit, MessageBox, PlainTextEdit, PrimaryPushButton, PushButton, SearchLineEdit, StrongBodyLabel, TableItemDelegate, isDarkTheme, qconfig, setCustomStyleSheet
 from utils.i18n import t
 
@@ -696,6 +696,12 @@ class MetricCard(CardWidget):
         font.setBold(True)
         self.value_label.setFont(font)
         self.detail_label = BodyLabel(detail, self)
+        self._detail_text = detail or ""
+        # Long detail strings (URLs, timestamps) must not stretch one card wider
+        # than its neighbours; the text is elided to the card width instead.
+        self.detail_label.setSizePolicy(
+            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred
+        )
         layout.addWidget(self.title_label)
         layout.addWidget(self.value_label)
         layout.addWidget(self.detail_label)
@@ -727,9 +733,27 @@ class MetricCard(CardWidget):
         changed = self.value_label.text() != str(value)
         self.value_label.setText(str(value))
         if detail is not None:
-            self.detail_label.setText(detail)
+            self._detail_text = str(detail)
+            self._apply_detail_elide()
         if changed and self._activity and self._animate_value_updates:
             self.pulse()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._apply_detail_elide()
+
+    def _apply_detail_elide(self):
+        metrics = QFontMetrics(self.detail_label.font())
+        available = max(
+            0, self.width() - 36 - (56 if self.icon_container is not None else 0)
+        )
+        elided = metrics.elidedText(
+            self._detail_text, Qt.TextElideMode.ElideRight, available
+        )
+        self.detail_label.setText(elided)
+        self.detail_label.setToolTip(
+            self._detail_text if elided != self._detail_text else ""
+        )
 
     def set_activity(self, active: bool, *, delay_ms: int = 0, rotate_icon: bool = False):
         """Enable the restrained running-state animation for this dashboard card."""
@@ -874,6 +898,8 @@ def metric_row(cards: list[MetricCard]) -> QWidget:
     layout.setContentsMargins(0, 0, 0, 0)
     layout.setSpacing(12)
     for card in cards:
+        # Equal columns regardless of text length; detail text is elided.
+        card.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         layout.addWidget(card, 1)
     layout.setAlignment(Qt.AlignmentFlag.AlignTop)
     return widget

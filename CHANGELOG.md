@@ -1,5 +1,43 @@
 # 更新日志（Changelog）
 
+## v3.1.0-hardened.1
+
+### 2026/11/08
+
+基于 v3.1.0 的安全加固与体验改版（AGPL-3.0，保留上游版权）。
+
+### 🔒 安全修复
+
+- 修复 `/hls_proxy/<id>` 未鉴权阻塞 30 秒导致的远程拒绝服务：未知频道立即 404、起流失败立即 503、首帧等待降为 8 秒；gunicorn 改为 `gthread` 单 worker 多线程，避免一个观看请求阻塞全站。
+- `/log/*`、`/stat`、`/api/*` 默认仅本机可访问（nginx + Flask 双层校验），并新增 `public_log_access` 开关。
+- 本地控制 API 增加 `Host`/`Origin` 校验，阻断跨站请求与 DNS rebinding（`/api/rtmp/*`、`/on_done`）。
+- RTMP 仅允许本机发布（`allow publish 127.0.0.1; deny publish all;`），防止频道流被劫持或带宽被盗用。
+- 新增出站 URL 准入校验 `utils/net_guard.py`：默认拒绝私有/回环/链路本地/保留地址与云元数据端点；订阅列表中的 `file:`/`javascript:`/`data:` URL 在入库阶段丢弃；`file://` 推流需显式开启 `allow_local_media`。
+- 供应链收敛：发布/构建 workflow 增加 `master` 分支守卫与 `persist-credentials: false`，并修复 `main.yml` 中把配置值 `${{ }}` 拼进 shell 的注入点；依赖安装统一 `--deploy` + `pipenv verify`。
+- 容器与镜像：compose 默认绑定 `127.0.0.1`、启用 `no-new-privileges`，Dockerfile 增加 `/healthz` HEALTHCHECK，`.dockerignore` 排除本地 `config/`、`output/` 私有数据。
+- 细节加固：`/logo` 仅提供位图 MIME、统一 `nosniff`、日志字段控制字符过滤、`/on_done` 仅本机。
+
+### ✨ 新增功能
+
+- 运行结果通知：通用 JSON webhook 与 Telegram Bot，支持仅成功/仅失败通知（`notify_*` 配置项）。
+- 命令行增强：`--check-config`（逐条列出配置错误）、`--once`（忽略定时任务只跑一次）、`--version`。
+- 运维接口：`GET /healthz`（编排探活）与 `GET /api/status`（本机运行状态）。
+
+### ⚠️ 行为变更
+
+- `/log/*` 不再默认公开；需要公开时设置 `public_log_access = True`。
+- 内网/LAN 源默认被拒绝；局域网部署需设置 `allow_private_network = True`。
+
+### 🐛 修复与优化
+
+- 桌面端：指标卡改为等宽并自动省略过长说明文本，Dashboard 间距收紧；页面切换加入 130ms 淡入（macOS 与离屏环境跳过）；新增 `Ctrl+1..7` 页面快捷跳转。
+
+### 已知限制
+
+- 桌面自动更新尚未引入独立代码签名，发布账号仍是信任根。
+- 出站校验未防御 TOCTOU/DNS rebinding，高安全场景请配合容器出口策略。
+- 容器仍以 root 运行。
+
 ## v3.1.0
 
 ### 2026/10/12

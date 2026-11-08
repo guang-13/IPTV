@@ -9,8 +9,14 @@ docs/images
 scripts/gui_showcase
 tests
 output/screenshots
+output
+.venv
+*.zip
 .git
 .github
 .gitignore
 .gitattributes
 utils/nginx-rtmp-win32
+config/hls
+config/local
+config/log

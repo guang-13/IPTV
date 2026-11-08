@@ -18,11 +18,20 @@ rtmp {
             hls_fragment 3s;
             hls_playlist_length 60s;
             on_done http://127.0.0.1:${APP_PORT}/on_done;
+            # Only this host may publish; otherwise anyone reaching 1935 can
+            # hijack a channel stream or borrow the upstream bandwidth.
+            allow publish 127.0.0.1;
+            deny publish all;
+            allow play all;
+            max_connections 64;
         }
     }
 }
 
 http {
+    server_tokens off;
+    limit_req_zone $binary_remote_addr zone=hls_proxy:10m rate=10r/s;
+
     server {
         listen ${NGINX_HTTP_PORT};
 
@@ -35,7 +44,27 @@ http {
             add_header Access-Control-Allow-Origin *;
         }
 
+        # Diagnostics stay local: they reveal source URLs, hosts and timings.
+        location ~ ^/log/ {
+            allow 127.0.0.1;
+            deny all;
+            proxy_pass http://127.0.0.1:${APP_PORT};
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+        }
+
+        # The control API is loopback-only by design.
+        location /api/ {
+            allow 127.0.0.1;
+            deny all;
+            proxy_pass http://127.0.0.1:${APP_PORT};
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+        }
+
         location /stat {
+            allow 127.0.0.1;
+            deny all;
             rtmp_stat all;
         }
 
@@ -49,11 +78,19 @@ http {
         }
 
         location ~ ^/hls/(.+)\.m3u8$ {
+            limit_req zone=hls_proxy burst=20 nodelay;
             proxy_pass http://127.0.0.1:${APP_PORT}/hls_proxy/$1;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             add_header Access-Control-Allow-Origin *;
+        }
+
+        location ~ ^/hls_proxy/ {
+            limit_req zone=hls_proxy burst=20 nodelay;
+            proxy_pass http://127.0.0.1:${APP_PORT};
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
         }
     }
 }

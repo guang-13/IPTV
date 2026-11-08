@@ -16,6 +16,7 @@ from utils.channel_quality import is_channel_result_valid
 from utils.config import config
 from utils.ffmpeg import probe_url, ffmpeg_url
 from utils.i18n import t
+from utils.net_guard import check_url
 from utils.requests.tools import headers as request_headers
 from utils.tools import get_resolution_value
 from utils.types import TestResult, ChannelTestResult, TestResultCacheData
@@ -155,6 +156,8 @@ async def get_speed_with_download(url: str, headers: dict = None, session: Any =
 
     speed_samples = deque(maxlen=stability_window)
     try:
+        # Channel URLs come from third-party playlists; never probe internal space.
+        check_url(url, allow_private=config.allow_private_network)
         async with _limit(semaphore):
             start_time = time()
             last_sample_time = start_time
@@ -248,6 +251,7 @@ async def get_url_content(url: str, headers: dict = None, session: Any = None,
         created_session = False
     content = ""
     try:
+        check_url(url, allow_private=config.allow_private_network)
         async with _limit(semaphore):
             async with session.get(url, headers=headers, timeout=timeout) as response:
                 if response.status == 200:
@@ -433,6 +437,10 @@ async def get_delay_requests(url, timeout=speed_test_timeout, proxy=None):
     """
     Get the delay of the url by requests
     """
+    try:
+        check_url(url, allow_private=config.allow_private_network)
+    except Exception:
+        return -1
     async with ClientSession(
             connector=TCPConnector(ssl=False), trust_env=False
     ) as session:

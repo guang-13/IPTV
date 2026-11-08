@@ -415,6 +415,15 @@ def _start_reserved_hls_to_rtmp(host, channel_id, client_user_agent: str | None 
     local_loop = False
     try:
         parsed_url = url.partition('$')[0]
+        is_local = parsed_url.startswith('file://') or (
+            not parsed_url.lower().startswith(('http://', 'https://', 'rtmp://', 'rtsp://'))
+            and os.path.exists(parsed_url)
+        )
+        if is_local and not config.allow_local_media:
+            # A third-party playlist must not turn a viewer request into a
+            # local-file read served back over /hls.
+            print("本地媒体源已被配置禁用（allow_local_media = False）")
+            return None
         if parsed_url.startswith('file://'):
             local_path = parsed_url[len('file://'):]
             if os.path.exists(local_path) and not local_path.lower().endswith('.m3u8'):

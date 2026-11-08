@@ -276,8 +276,8 @@ class DashboardPage(QWidget):
         channel_layout.addWidget(self.channel_stack, 1)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 12, 16, 16)
-        layout.setSpacing(10)
+        layout.setContentsMargins(16, 10, 16, 14)
+        layout.setSpacing(8)
         layout.addWidget(metric_row([self.status_card, self.channel_card, self.valid_card, self.service_card]))
         layout.addWidget(self.progress_card)
         layout.addWidget(self.channels_card, 1)

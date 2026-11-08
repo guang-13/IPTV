@@ -37,4 +37,15 @@ nginx -g 'daemon off;' &
 
 python -u $APP_WORKDIR/main.py &
 
-exec env IPTV_API_SKIP_VERSION_CHECK=1 python -u -m gunicorn service.app:app -b 127.0.0.1:$APP_PORT --workers=1 --timeout=1000
+# Stream bookkeeping lives in this process, so keep a single worker and gain
+# concurrency from threads: a viewer waiting on a stream start must not block
+# every other request (see /hls_proxy).
+exec env IPTV_API_SKIP_VERSION_CHECK=1 python -u -m gunicorn service.app:app \
+  -b 127.0.0.1:$APP_PORT \
+  --worker-class=gthread \
+  --workers=1 \
+  --threads="${GUNICORN_THREADS:-8}" \
+  --timeout=60 \
+  --graceful-timeout=10 \
+  --access-logfile - \
+  --error-logfile -

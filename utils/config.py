@@ -55,7 +55,11 @@ class ConfigValidationError(ValueError):
 
 
 BOOLEAN_KEYS = {
+    "allow_local_media",
+    "allow_private_network",
     "ipv6_support",
+    "notify_on_failure",
+    "notify_on_success",
     "open_auto_disable_source",
     "open_empty_category",
     "open_epg",
@@ -82,6 +86,7 @@ BOOLEAN_KEYS = {
     "open_update_time",
     "open_url_info",
     "open_use_cache",
+    "public_log_access",
     "speed_test_filter_host",
     "update_startup",
 }
@@ -142,6 +147,9 @@ CONFIG_SCHEMA = {
     "location": ConfigRule(allow_empty=True),
     "isp": ConfigRule(allow_empty=True),
     "logo_url": ConfigRule(allow_empty=True),
+    "notify_webhook": ConfigRule(allow_empty=True),
+    "notify_telegram_bot_token": ConfigRule(allow_empty=True),
+    "notify_telegram_chat_id": ConfigRule(allow_empty=True),
 }
 
 
@@ -258,6 +266,41 @@ class ConfigManager:
     @property
     def open_service(self):
         return self.config.getboolean("Settings", "open_service", fallback=True)
+
+    @property
+    def public_log_access(self):
+        """Expose /log/* to non-loopback clients. Off by default: logs leak topology."""
+        return self.config.getboolean("Settings", "public_log_access", fallback=False)
+
+    @property
+    def allow_private_network(self):
+        """Allow fetching private/loopback source URLs (LAN-only deployments)."""
+        return self.config.getboolean("Settings", "allow_private_network", fallback=False)
+
+    @property
+    def allow_local_media(self):
+        """Allow file:// and local paths as media sources for RTMP pushing."""
+        return self.config.getboolean("Settings", "allow_local_media", fallback=True)
+
+    @property
+    def notify_webhook(self):
+        return self.config.get("Settings", "notify_webhook", fallback="")
+
+    @property
+    def notify_telegram_bot_token(self):
+        return self.config.get("Settings", "notify_telegram_bot_token", fallback="")
+
+    @property
+    def notify_telegram_chat_id(self):
+        return self.config.get("Settings", "notify_telegram_chat_id", fallback="")
+
+    @property
+    def notify_on_success(self):
+        return self.config.getboolean("Settings", "notify_on_success", fallback=False)
+
+    @property
+    def notify_on_failure(self):
+        return self.config.getboolean("Settings", "notify_on_failure", fallback=True)
 
     @property
     def open_update(self):
@@ -1166,4 +1209,14 @@ class ConfigManager:
             print(f"Failed to copy files: {str(e)}")
 
 
-config = ConfigManager()
+try:
+    config = ConfigManager()
+except ConfigValidationError as error:
+    if "--check-config" in sys.argv or "--validate-config" in sys.argv:
+        # A friendly report beats a traceback when the CLI is used to lint a
+        # hand-edited config.ini.
+        print("配置校验失败 / configuration is invalid：")
+        for issue in error.issues:
+            print(f"  - {issue}")
+        raise SystemExit(2)
+    raise

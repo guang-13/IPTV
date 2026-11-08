@@ -55,6 +55,9 @@ RUN mkdir -p /var/log/nginx && \
 
 RUN apk add --no-cache ffmpeg pcre
 
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+  CMD python -c "import sys,urllib.request;sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:5180/healthz', timeout=3).status == 200 else 1)"
+
 EXPOSE $NGINX_HTTP_PORT
 
 COPY entrypoint.sh /iptv-api-entrypoint.sh

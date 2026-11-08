@@ -1,5 +1,6 @@
 import os
 import os.path
+import subprocess
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
@@ -54,7 +55,7 @@ class LocalUI:
 
     def edit_file(self, path):
         if os.path.exists(resource_path(path)):
-            os.system(f'notepad.exe {path}')
+            subprocess.run(['notepad.exe', path])
         else:
             print(f"File {path} not found!")
             messagebox.showerror("Error", f"File {path} not found!")

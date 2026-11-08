@@ -12,6 +12,8 @@ jobs:
 
   build:
     needs: test
+    # Releases must be cut from master, never from a feature branch.
+    if: github.ref == 'refs/heads/master'
     strategy:
       fail-fast: false
       matrix:
@@ -24,6 +26,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@v6

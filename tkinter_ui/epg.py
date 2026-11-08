@@ -1,5 +1,6 @@
 import os
 import os.path
+import subprocess
 import tkinter as tk
 from tkinter import ttk
 
@@ -54,7 +55,7 @@ class EpgUI:
     def edit_epg_file(self):
         path = resource_path(constants.epg_path)
         if os.path.exists(path):
-            os.system(f'notepad.exe {path}')
+            subprocess.run(['notepad.exe', path])
 
     def change_entry_state(self, state):
         for entry in [

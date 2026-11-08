@@ -1,4 +1,5 @@
 import os
+import subprocess
 import tkinter as tk
 import webbrowser
 from tkinter import filedialog, messagebox, ttk
@@ -571,7 +572,7 @@ class DefaultUI:
 
     def edit_file(self, path):
         if os.path.exists(resource_path(path)):
-            os.system(f'notepad.exe {path}')
+            subprocess.run(['notepad.exe', path])
         else:
             print(f"File {path} not found!")
             messagebox.showerror("Error", f"File {path} not found!")

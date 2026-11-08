@@ -4,6 +4,7 @@ import datetime
 import gzip
 import os
 import pickle
+import sys
 import threading
 from time import time
 from typing import Callable, Optional, Any
@@ -20,6 +21,7 @@ from utils.channel import channel_alias, get_channel_items, append_total_data, g
 from utils.channel_repository import finish_run, prune_stream_screenshots, start_run
 from utils.config import config
 from utils.i18n import t
+from utils.notify import notify_run_finished
 from utils.requests.async_tools import check_ipv6_support_async
 from utils.reporting import Reporter
 from utils.run_state import write_run_state
@@ -833,6 +835,7 @@ class UpdateSource:
                 state_data["reason"] = self.run_outcome.get("reason")
                 state_data["message"] = self.run_outcome.get("message")
             write_run_state(state, **state_data)
+            notify_run_finished(state, state_data, reporter=self.reporter)
             finish_run(constants.channel_results_path, run_id, run_status, run_error)
             self.reporter.bind_run(None)
 
@@ -969,8 +972,37 @@ class UpdateSource:
             self.reporter.warning("schedule.cancelled", t("msg.schedule_cancelled"), phase="schedule")
 
 
+def _parse_cli_args(argv):
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        prog="main.py",
+        description="IPTV-API 直播源自动更新工具 / playlist updater",
+    )
+    parser.add_argument("--once", action="store_true",
+                        help="只执行一次更新后退出，忽略定时任务")
+    parser.add_argument("--check-config", "--validate-config", dest="check_config",
+                        action="store_true", help="校验配置后退出，不执行更新")
+    parser.add_argument("--version", action="store_true", help="显示版本后退出")
+    args, _unknown = parser.parse_known_args(argv)
+    return args
+
+
 if __name__ == "__main__":
+    args = _parse_cli_args(sys.argv[1:])
     info = get_version_info()
+    if args.version:
+        print(f"{info['name']} {info['version']} ({info['build_time']})")
+        raise SystemExit(0)
+    if args.check_config:
+        # Importing utils.config validates config.ini; reaching this point means
+        # the files are valid.
+        print("配置校验通过 / configuration OK")
+        print(f"  source_file = {config.source_file}")
+        print(f"  final_file  = {config.final_file}")
+        print(f"  app_port    = {config.app_port}")
+        print(f"  open_service = {config.open_service}")
+        raise SystemExit(0)
     cli_reporter = Reporter()
     cli_reporter.info(
         "application.started",
@@ -984,6 +1016,8 @@ if __name__ == "__main__":
     asyncio.set_event_loop(loop)
     update_source = UpdateSource(reporter=cli_reporter)
     try:
-        loop.run_until_complete(update_source.start())
+        loop.run_until_complete(
+            update_source.run_once() if args.once else update_source.start()
+        )
     finally:
         cli_reporter.close()

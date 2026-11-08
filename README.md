@@ -209,6 +209,22 @@
 
 </details>
 
+### 安全与通知相关配置（本分支新增）
+
+| 配置项 | 说明 | 默认值 |
+|:--|:--|:--|
+| public_log_access | 是否允许非本机客户端读取 `/log/*` 运行日志；日志包含源地址与主机信息 | False |
+| allow_private_network | 是否允许订阅源/测速目标落在内网或保留网段；局域网自建源需要开启 | False |
+| allow_local_media | 是否允许 `file://` 或本地路径作为推流媒体源 | True |
+| notify_webhook | 运行结果通知的 JSON webhook 地址，留空不启用 | 空 |
+| notify_telegram_bot_token | Telegram Bot Token（与 chat_id 同时填写才生效） | 空 |
+| notify_telegram_chat_id | Telegram 接收会话 ID | 空 |
+| notify_on_success | 更新成功时是否发送通知 | False |
+| notify_on_failure | 更新失败/取消时是否发送通知 | True |
+
+命令行还新增了 `--check-config`（校验配置后退出）、`--once`（忽略定时只跑一次）、`--version`，
+服务新增 `GET /healthz` 探活端点。详见 [SECURITY.md](./SECURITY.md)。
+
 ## 快速上手
 
 ### 配置与结果目录

@@ -2,10 +2,12 @@ import argparse
 import ctypes
 import ipaddress
 import os
+import re
 import socket
 import sys
 import threading
 import time
+from urllib.parse import urlsplit
 
 sys.path.append(os.path.dirname(sys.path[0]))
 from flask import Flask, cli as flask_cli, send_from_directory, make_response, request, jsonify, Response
@@ -16,7 +18,7 @@ import utils.constants as constants
 import atexit
 from service.rtmp import start_rtmp_service, stop_rtmp_service, app_rtmp_url, hls_temp_path, STREAMS_LOCK, \
     hls_running_streams, start_hls_to_rtmp, start_hls_to_rtmp_async, hls_last_access, HLS_IDLE_TIMEOUT, \
-    HLS_WAIT_TIMEOUT, HLS_WAIT_INTERVAL, stop_all_streams, stop_stream, stream_capacity_snapshot
+    HLS_WAIT_INTERVAL, stop_all_streams, stop_stream, stream_capacity_snapshot, get_channel_data
 import logging
 from utils.i18n import t
 from utils.rtmp_runtime import install_rtmp_runtime, rtmp_runtime_status
@@ -31,6 +33,37 @@ log.setLevel(logging.ERROR)
 SERVICE_ID = "iptv-api-desktop-service"
 _service_parent_pid = 0
 _service_started_at = time.time()
+
+# A viewer request must never block a worker for the full stream start window.
+HLS_FIRST_FRAME_TIMEOUT = 8.0
+_CHANNEL_ID_PATTERN = re.compile(r"[^\x00-\x1f\x7f/\\]{1,128}")
+_MAX_LOG_FIELD = 200
+_LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost"}
+_ALLOWED_LOGO_MIMES = {
+    "image/png",
+    "image/jpeg",
+    "image/gif",
+    "image/webp",
+    "image/bmp",
+    "image/x-icon",
+    "image/vnd.microsoft.icon",
+}
+
+
+def _clean_text(value, limit=_MAX_LOG_FIELD):
+    """Strip control characters before untrusted text reaches a log sink."""
+    text = "".join(
+        char for char in str(value or "") if char >= " " and char != "\x7f"
+    )
+    return text[:limit]
+
+
+@app.after_request
+def _apply_security_headers(response):
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    return response
 
 
 def _configure_service_output():
@@ -153,7 +186,11 @@ def show_logo(filename):
         return jsonify({"error": "logo not found"}), 404
 
     mime_type, _ = mimetypes.guess_type(safe_name)
-    return send_from_directory(logo_dir, safe_name, mimetype=mime_type or 'application/octet-stream')
+    if mime_type not in _ALLOWED_LOGO_MIMES:
+        # A logo directory shared with a playlist must never serve HTML or SVG
+        # as an active same-origin document.
+        return jsonify({"error": "unsupported logo type"}), 415
+    return send_from_directory(logo_dir, safe_name, mimetype=mime_type)
 
 
 @app.route("/txt")
@@ -294,6 +331,8 @@ def show_unmatch_log():
 
 
 def _show_log_file(text_path, jsonl_path):
+    if not _logs_allowed():
+        return jsonify({t("name.error"): t("msg.api_local_only")}), 403
     use_jsonl = request.args.get("format", "").lower() in {"json", "jsonl", "ndjson"}
     path = jsonl_path if use_jsonl else text_path
     if os.path.isfile(path) and os.path.getsize(path) > 0:
@@ -327,12 +366,15 @@ def _show_log_file(text_path, jsonl_path):
 
 @app.route('/hls_proxy/<channel_id>', methods=['GET'])
 def hls_proxy(channel_id):
-    if not channel_id:
+    # Reject separators and control characters before the id reaches a file path
+    # or an argument list: viewers control this segment directly.
+    if not channel_id or not _CHANNEL_ID_PATTERN.fullmatch(channel_id):
         return jsonify({t("name.error"): t("msg.error_channel_id_required")}), 400
 
     channel_file = f'{channel_id}.m3u8'
     m3u8_path = os.path.join(hls_temp_path, channel_file)
 
+    process = None
     need_start = False
     with STREAMS_LOCK:
         proc = hls_running_streams.get(channel_id)
@@ -342,9 +384,13 @@ def hls_proxy(channel_id):
                 hls_running_streams.pop(channel_id, None)
 
     if need_start:
+        # Unknown ids must fail fast instead of holding the worker while a
+        # playlist that will never appear is polled for.
+        if not get_channel_data(channel_id).get("url"):
+            return jsonify({t("name.error"): t("msg.error_channel_url_not_found")}), 404
         host = f"{app_rtmp_url}/hls"
         client_ua = request.headers.get('User-Agent') if request and hasattr(request, 'headers') else None
-        print(f"▶️ {client_ua}")
+        print(f"▶️ {_clean_text(client_ua)}")
         process = start_hls_to_rtmp(host, channel_id, client_user_agent=client_ua)
         if process is None:
             capacity = stream_capacity_snapshot()
@@ -359,10 +405,14 @@ def hls_proxy(channel_id):
                     "error_code": "capacity_reached",
                     **capacity,
                 }), 409
+            return jsonify({
+                t("name.error"): t("msg.m3u8_hls_not_ready"),
+                "error_code": "stream_unavailable",
+            }), 503
 
     hls_min_segments = 3
     waited = 0.0
-    while waited < HLS_WAIT_TIMEOUT:
+    while waited < HLS_FIRST_FRAME_TIMEOUT:
         if os.path.exists(m3u8_path):
             try:
                 with open(m3u8_path, 'r', encoding='utf-8', errors='ignore') as f:
@@ -372,18 +422,21 @@ def hls_proxy(channel_id):
                 if segment_count >= hls_min_segments and not ends_with_discont:
                     break
             except Exception as e:
-                print(t("msg.error_channel_id_m3u8_read_info").format(channel_id=channel_id, info=e))
+                print(t("msg.error_channel_id_m3u8_read_info").format(channel_id=_clean_text(channel_id), info=e))
         time.sleep(HLS_WAIT_INTERVAL)
         waited += HLS_WAIT_INTERVAL
 
     if not os.path.exists(m3u8_path):
-        return jsonify({t("name.error"): t("msg.m3u8_hls_not_ready")}), 503
+        response = jsonify({t("name.error"): t("msg.m3u8_hls_not_ready")})
+        response.status_code = 503
+        response.headers["Retry-After"] = "1"
+        return response
 
     try:
         with open(m3u8_path, 'rb') as f:
             data = f.read()
     except Exception as e:
-        print(t("msg.error_channel_id_m3u8_read_info").format(channel_id=channel_id, info=e))
+        print(t("msg.error_channel_id_m3u8_read_info").format(channel_id=_clean_text(channel_id), info=e))
         return jsonify({t("name.error"): t("msg.error_m3u8_read")}), 500
 
     now = time.time()
@@ -395,20 +448,51 @@ def hls_proxy(channel_id):
 
 @app.post('/on_done')
 def on_done():
-    form = request.form
-    channel_id = form.get('name', '')
+    if not _local_request():
+        return jsonify({t("name.error"): t("msg.api_local_only")}), 403
+    channel_id = _clean_text(request.form.get('name', ''))
 
     print(t("msg.rtmp_on_done").format(channel_id=channel_id))
     return ''
+
+
+def _request_host_allowed():
+    """Reject requests whose Host is neither loopback nor the public domain.
+
+    This keeps DNS-rebinding pages from driving the local control API.
+    """
+    host = (request.host or "").split(":")[0].strip("[]").lower()
+    if not host or host in _LOOPBACK_HOSTS:
+        return True
+    configured = (config.public_domain or "").strip().lower()
+    return bool(configured) and host == configured
+
+
+def _origin_allowed():
+    """Block cross-site browser requests; native clients send no Origin."""
+    origin = request.headers.get("Origin")
+    if not origin:
+        return True
+    if origin == "null":
+        return False
+    origin_host = (urlsplit(origin).hostname or "").lower()
+    request_host = (request.host or "").split(":")[0].strip("[]").lower()
+    return origin_host in _LOOPBACK_HOSTS or origin_host == request_host
 
 
 def _local_request():
     remote = request.remote_addr or ""
     forwarded = request.headers.get("X-Real-IP") if remote in {"127.0.0.1", "::1"} else None
     try:
-        return ipaddress.ip_address(forwarded or remote).is_loopback
+        if not ipaddress.ip_address(forwarded or remote).is_loopback:
+            return False
     except ValueError:
         return False
+    return _request_host_allowed() and _origin_allowed()
+
+
+def _logs_allowed():
+    return bool(getattr(config, "public_log_access", False)) or _local_request()
 
 
 @app.post('/api/rtmp/streams/<channel_id>/<action>')
@@ -467,6 +551,33 @@ def shutdown_rtmp_runtime():
     stop_all_streams()
     stop_rtmp_service()
     return jsonify({"stopped": True})
+
+
+@app.get('/healthz')
+def healthz():
+    """Liveness probe for orchestrators; deliberately free of paths and URLs."""
+    state = read_run_state()
+    version = get_version_info()
+    return jsonify({
+        "status": "ok",
+        "service": SERVICE_ID,
+        "version": version.get("version"),
+        "run_status": state.get("status", "never_run"),
+        "updated_at": state.get("updated_at"),
+    })
+
+
+@app.get('/api/status')
+def api_status():
+    if not _local_request():
+        return jsonify({t("name.error"): t("msg.api_local_only")}), 403
+    return jsonify({
+        "service": SERVICE_ID,
+        "pid": os.getpid(),
+        "started_at": _service_started_at,
+        "run": read_run_state(),
+        "rtmp": stream_capacity_snapshot(),
+    })
 
 
 @app.get('/api/runtime/identity')

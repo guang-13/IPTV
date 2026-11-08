@@ -47,6 +47,11 @@ jobs:
           git fetch --depth=1 origin gd
           git archive FETCH_HEAD config | tar -x
 
+      - name: Drop persisted checkout credentials
+        # Dependency installation must not be able to reach the write-capable
+        # token that actions/checkout leaves in .git/config.
+        run: git config --local --unset-all http.https://github.com/.extraheader || true
+
       - name: Record checked-out revision and state key
         id: source
         env:
@@ -169,6 +174,7 @@ jobs:
         env:
           PAGES_BASE: ${{ steps.generate.outputs.pages_base_url }}
           RELEASE_BASE: https://github.com/${{ github.repository }}/releases/download/${{ steps.release.outputs.tag }}
+          FINAL_FILE: ${{ steps.assets.outputs.final_file }}
         run: |
           {
             echo "### Published playlist"
@@ -201,7 +207,7 @@ jobs:
               echo "- Release unmatched channels: $RELEASE_BASE/unmatch.log"
             fi
             echo
-            echo "Generated from \`${{ steps.assets.outputs.final_file }}\` without creating a Git commit."
+            printf 'Generated from `%s` without creating a Git commit.\n' "${FINAL_FILE}"
           } >> "$GITHUB_STEP_SUMMARY"
 
   deploy-pages:

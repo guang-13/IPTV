@@ -5,7 +5,7 @@ import threading
 
 import pytz
 from PySide6.QtCore import QSettings, QTimer, QUrl, Signal, Qt
-from PySide6.QtGui import QAction, QColor, QDesktopServices, QFontMetrics, QGuiApplication, QIcon, QPainter, QPen, QPixmap
+from PySide6.QtGui import QAction, QColor, QDesktopServices, QFontMetrics, QGuiApplication, QIcon, QKeySequence, QPainter, QPen, QPixmap, QShortcut
 from PySide6.QtWidgets import QApplication, QCheckBox, QDialog, QDialogButtonBox, QHBoxLayout, QLabel, QMenu, QMessageBox, QPushButton, QSystemTrayIcon, QVBoxLayout, QWidget
 from qfluentwidgets import FluentIcon, FluentWindow, InfoBar, InfoBarPosition, NavigationItemPosition, Theme, isDarkTheme, setTheme
 
@@ -20,6 +20,7 @@ from desktop_ui.pages.sources import SourcesPage
 from desktop_ui.pages.tasks import TasksPage
 from desktop_ui.models import ChannelLogoLoader
 from desktop_ui.widgets import NavigationStatusIndicator, apply_dialog_theme, localize_dialog_buttons
+from desktop_ui.ui_effects import fade_in_page
 from desktop_ui.platform_integration import set_macos_activation_policy, suspend_macos_window_flush
 import utils.constants as constants
 from utils.config import config, resource_path
@@ -109,6 +110,7 @@ class MainWindow(FluentWindow):
         self.tasks_item = self.addSubInterface(self.tasks, FluentIcon.HISTORY, t("desktop.task_history"))
         self.settings_item = self.addSubInterface(self.settings, FluentIcon.SETTING, t("desktop.settings"), NavigationItemPosition.BOTTOM)
         self.about_item = self.addSubInterface(self.about, FluentIcon.INFO, t("desktop.about"), NavigationItemPosition.BOTTOM)
+        self._install_navigation_shortcuts()
         self._navigation_items = {
             "dashboard": (self.dashboard_item, "desktop.dashboard", self.dashboard),
             "channels": (self.channels_item, "desktop.channel_center", self.channels),
@@ -280,6 +282,25 @@ class MainWindow(FluentWindow):
             super().switchTo(interface)
             if sys.platform == "darwin":
                 QApplication.sendPostedEvents()
+        fade_in_page(interface)
+
+    def _install_navigation_shortcuts(self):
+        """Ctrl+1..7 jump between pages without leaving the keyboard."""
+        pages = (
+            self.dashboard,
+            self.channels,
+            self.sources,
+            self.rtmp,
+            self.logs,
+            self.tasks,
+            self.settings,
+        )
+        self._navigation_shortcuts = []
+        for index, page in enumerate(pages, start=1):
+            shortcut = QShortcut(QKeySequence(f"Ctrl+{index}"), self)
+            shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
+            shortcut.activated.connect(lambda page=page: self.switchTo(page))
+            self._navigation_shortcuts.append(shortcut)
 
     def moveEvent(self, event):
         super().moveEvent(event)

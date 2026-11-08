@@ -2,7 +2,9 @@ import asyncio
 import json
 import subprocess
 
+from utils.config import config
 from utils.ffmpeg.executable import resolve_ffprobe_executable
+from utils.net_guard import UnsafeUrlError, check_url
 from utils.process import direct_network_env, no_window_process_kwargs
 
 
@@ -153,6 +155,14 @@ def probe_url_sync(url: str, headers: dict = None, timeout: int = 10) -> dict | 
     """
     executable = resolve_ffprobe_executable()
     if not executable:
+        return None
+    try:
+        check_url(
+            url,
+            allow_private=config.allow_private_network,
+            allow_file=config.allow_local_media,
+        )
+    except UnsafeUrlError:
         return None
 
     header_str = ''.join(f'{k}: {v}\r\n' for k, v in (headers or {}).items()) if headers else ''

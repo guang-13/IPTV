@@ -5,9 +5,13 @@ services:
     restart: unless-stopped
     tty: true
     stdin_open: true
+    security_opt:
+      - no-new-privileges:true
 
     ports:
-      - "${PORT:-80}:8080"
+      # Bind to 127.0.0.1 by default and terminate TLS in a reverse proxy; set
+      # BIND_ADDR=0.0.0.0 only when the service must be exposed directly.
+      - "${BIND_ADDR:-127.0.0.1}:${PORT:-80}:8080"
 
     volumes:
       - /iptv-api/config:/iptv-api/config

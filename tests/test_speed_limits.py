@@ -3,15 +3,28 @@ import unittest
 from unittest.mock import patch
 
 from utils.speed import get_result
+from utils.config import config
 
 
 class SpeedDownloadLimitTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
+        # The downloader now refuses private/loopback targets unless the
+        # operator opts in; this test intentionally serves media from 127.0.0.1.
+        self._previous_allow_private = config.config.get(
+            "Settings", "allow_private_network", fallback=None
+        )
+        config.config.set("Settings", "allow_private_network", "True")
         self.bytes_sent = 0
         self.server = await asyncio.start_server(self._handle_request, "127.0.0.1", 0)
         self.port = self.server.sockets[0].getsockname()[1]
 
     async def asyncTearDown(self):
+        if self._previous_allow_private is None:
+            config.config.remove_option("Settings", "allow_private_network")
+        else:
+            config.config.set(
+                "Settings", "allow_private_network", self._previous_allow_private
+            )
         self.server.close()
         await self.server.wait_closed()
 

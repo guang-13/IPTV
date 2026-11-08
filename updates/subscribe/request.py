@@ -37,6 +37,11 @@ def _channel_item_key(item):
 
 def _build_channel_item(item, source_headers=None, in_whitelist=False):
     url, _, extra_info = (item.get("value") or "").strip().partition("$")
+    scheme = url.split(":", 1)[0].strip().lower() if ":" in url else ""
+    if scheme in {"file", "javascript", "data", "vbscript"}:
+        # A subscribed list must not make this host read local files or hand
+        # script URLs to players.
+        return None
     item_headers = {**(source_headers or {}), **(item.get("headers") or {})}
     value = {
         "url": url,
@@ -235,6 +240,8 @@ async def get_channels_by_subscribe_urls(
                         if not open_unmatch_category:
                             continue
                     value = _build_channel_item(item, headers, in_whitelist)
+                    if value is None:
+                        continue
                     key = _channel_item_key(value)
                     if key not in channel_seen[name]:
                         channel_seen[name].add(key)

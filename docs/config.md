@@ -49,6 +49,14 @@
 | final_file             | 生成结果文件路径                                                                                                             | output/result.txt                        |
 | open_realtime_write    | 开启实时写入结果文件，在测速过程中可以访问并使用更新结果                                                                                         | True                                     |
 | open_service           | 开启页面服务，用于控制是否启动结果页面服务；如果使用青龙等平台部署，有专门设定的定时任务，需要更新完成后停止运行，可以关闭该功能                                                     | True                                     |
+| public_log_access      | 是否允许非本机客户端读取 /log/* 运行日志；日志包含源地址与主机信息，默认仅本机可读                                                                        | False                                    |
+| allow_private_network  | 是否允许订阅源/测速目标落在内网或保留网段；局域网自建源需要开启，公网部署建议保持 False                                                                  | False                                    |
+| allow_local_media      | 是否允许 file:// 或本地路径作为推流媒体源（本地 HLS/录像）                                                                                             | True                                     |
+| notify_webhook         | 运行结果通知的 JSON webhook 地址；留空不启用                                                                                                   |                                          |
+| notify_telegram_bot_token | Telegram Bot Token，与 notify_telegram_chat_id 同时填写才生效                                                                                     |                                          |
+| notify_telegram_chat_id | Telegram 接收会话 ID                                                                                                                          |                                          |
+| notify_on_success      | 更新成功时是否发送通知                                                                                                                          | False                                    |
+| notify_on_failure      | 更新失败/取消时是否发送通知                                                                                                                       | True                                     |
 | service_port           | HTTP 服务访问端口；桌面版启用推流时由 Nginx 监听，新配置通常只需修改此端口                                                                    | 8080                                     |
 | public_url             | 推荐的公网完整访问地址，例如 `https://iptv.example.com` 或 `http://host:8088`；用于统一生成播放列表、EPG、台标和服务链接                                |                                          |
 | app_port               | 高级兼容设置：Flask 内部 API 端口，通常无需修改，也不应作为用户访问端口                                                                        | 5180                                     |
